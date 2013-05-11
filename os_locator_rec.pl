@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 #----------------------------------------------------------------------
 # Script: os_locator_rec.pl
-# Reconcile OS Locator data with fosm data from MongoDB
+# Reconcile OS Locator data with OpenStreetMap data from MongoDB
 #----------------------------------------------------------------------
 
 use strict;
@@ -16,8 +16,8 @@ if ($num_args != 2) {
 }
 
 my $conn = MongoDB::Connection->new;
-my $db = $conn->osm;
-my $coll = $db->highways;
+my $db = $conn->get_database('osm');
+my $coll = $db->get_collection('highways');
 my $input = $ARGV[0];
 my $outputDir = $ARGV[1];
 my %outputFiles = ();

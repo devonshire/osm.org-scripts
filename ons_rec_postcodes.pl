@@ -13,21 +13,24 @@ if ($num_args != 4) {
   exit;
 }
 
-my $area = $ARGV[0];			# Postcode area eg. TQ
+my $area = $ARGV[0];			# Postcode area eg. TQ to reconcile
 my $osm = $ARGV[1];			# OSM input file
 my $ons = $ARGV[2];			# ONS input file
 my $output = $ARGV[3];		# OSM output filename
-
-my @way = undef;
-my $lat = undef;
-my $lon = undef;
-my %postcodes = ();
-my $postcode = undef;
-my $total_osm = 0;
-my $total_ons = 0;
-my $unmatched = 0;
-my $matched = 0;
-my $node = -1000000;
+my @rec = undef;				# ONS input record parsed from csv
+my $lat = undef;				# Latitude to write to OSM file
+my $lon = undef;				# Longitude to write to OSM file
+my %postcodes = ();			# All OSM postcodes for area read from file
+my %pc_areas = ();			# Stats for postcode area matches
+my %pc_area_tots = ();		# Total number of postcodes by area part
+my $postcode = undef;		# Postcode being processed
+my $pc_area = undef;			# Postcode area (3/4 char) being processed
+my $total_osm = 0;			# Total OSM postcodes
+my $total_ons = 0;			# Total ONS postcodes
+my $unmatched = 0;			# Total unmatched postcodes
+my $matched = 0;				# Total matched postcodes
+my $count = undef;			# Postcode counts
+my $node = -1000000;			# Current node id to write to OSM file
 
 # Read in osm postcodes for area
 print "Reading OSM Postcodes...\n";
@@ -61,28 +64,46 @@ while(<ONS>) {
 	# Only process postcodes for particular area
 	if (/^\"$area/) {
 
-		@way = &parse_csv($_);
+		@rec = &parse_csv($_);
 
 		# Only interested in postcodes with no end date
-		if (length($way[4]) < 1) {
+		if (length($rec[4]) < 1) {
 
-			my ($x, $y, $z) = OSGB36_to_ETRS89($way[9], $way[10]);
+			my ($x, $y, $z) = OSGB36_to_ETRS89($rec[9], $rec[10]);
 			($lat, $lon) = grid_to_ll($x, $y, 'WGS84'); # or 'WGS84'
 
 			# Match postcode without spaces
-			$postcode = $way[0];
+			$postcode = $rec[0];
 			$postcode =~ tr/ //ds;
+
+			# Get postcode area (first part of postcode)
+			my @values = split(' ', $rec[1]);
+			$pc_area = $values[0];
+
+			# Update total postcodes for each area
+			if (!exists($pc_area_tots{$pc_area})) {
+				$pc_area_tots{$pc_area} = 1;
+			} else {
+				$pc_area_tots{$pc_area} += 1;
+			}
 
 			# Matched
 			if (exists($postcodes{$postcode})) {
-				print "...postcode $way[2] matched\n";
+				print "...postcode $rec[2] matched\n";
 				$total_ons++;
 				$matched++;
+
+				# Also record match against area
+				if (!exists($pc_areas{$pc_area})) {
+					$pc_areas{$pc_area} = 1;
+				} else {
+					$pc_areas{$pc_area} += 1;
+				}
 
 			# Not matched
 			} else {
 				print OUTPUT "  <node id='$node' visible='true' lat='$lat' lon='$lon'>\n";
-				print OUTPUT "    <tag k='addr:postcode' v='$way[2]' />\n";
+				print OUTPUT "    <tag k='addr:postcode' v='$rec[2]' />\n";
 				print OUTPUT "    <tag k='source:postcode' v='ONS_Postcode_Directory' />\n";
 				print OUTPUT "  </node>\n";
 				$node--;
@@ -103,6 +124,24 @@ print "Total unique OSM postcodes read : $total_osm\n";
 print "Total unique ONS postcodes read : $total_ons\n";
 print "Total matched postcodes         : $matched\n";
 print "Total unmatched postcodes       : $unmatched\n\n";
+
+print "Matches by postcode area...\n";
+
+# Sort totals keys by length and then alpha
+my @keys = sort {length $a <=> length $b || $a cmp $b} (keys %pc_area_tots);
+
+foreach $pc_area (@keys) {
+
+	print "...$pc_area: matched ";
+
+	if (exists($pc_areas{$pc_area})) {
+		print $pc_areas{$pc_area};
+				} else {
+		print "0";
+	}
+
+	print " out of $pc_area_tots{$pc_area}\n";
+}
 
 # Parse comma and quote delimited record to fields
 sub parse_csv {
